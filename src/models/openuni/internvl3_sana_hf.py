@@ -303,7 +303,7 @@ class OpenUniInternVL3SANAHF(BaseModel):
 
         pixel_values_src = data_dict['pixel_values_src'].to(dtype=self.dtype, device=self.device)
         vit_embeds = self.get_semantic_features(pixel_values_src)
-        vit_embeds.requires_grad = True
+        # vit_embeds.requires_grad = True
 
         pixel_values = data_dict['pixel_values'].to(dtype=self.dtype, device=self.device)
         image_latents = self.pixels_to_latents(pixel_values)

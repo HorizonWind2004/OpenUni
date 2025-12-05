@@ -38,7 +38,7 @@ if __name__ == '__main__':
     parser.add_argument('config', help='config file path.')
     parser.add_argument('--checkpoint', default=None, type=str)
     parser.add_argument('--batch_size', default=16, type=int)
-    parser.add_argument('--data', default='data/dpg_bench/prompts', type=str)
+    parser.add_argument('--data', default='../Benchmark/dpgbench/prompts', type=str)
     parser.add_argument('--output', default='output', type=str)
     parser.add_argument("--cfg_prompt", type=str, default=None)
     parser.add_argument("--cfg_scale", type=float, default=4.5)
@@ -46,6 +46,7 @@ if __name__ == '__main__':
     parser.add_argument("--height", type=int, default=512)
     parser.add_argument("--width", type=int, default=512)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--base", type=str, default=None)
 
     args = parser.parse_args()
 
@@ -71,6 +72,10 @@ if __name__ == '__main__':
                             )
 
     model = BUILDER.build(config.model)
+    if args.base is not None:
+        print(f"Load checkpoint: {args.base}", flush=True)
+        state_dict = guess_load_checkpoint(args.base)
+        info = model.load_state_dict(state_dict, strict=False) 
     if args.checkpoint is not None:
         state_dict = guess_load_checkpoint(args.checkpoint)
         missing, unexpected = model.load_state_dict(state_dict, strict=False)
@@ -126,4 +131,16 @@ if __name__ == '__main__':
         # Save samples to disk as individual .png files
         for image, data_sample in zip(images, data_samples):
             name = data_sample['name']
-            Image.fromarray(image).save(f"{args.output}/{name}.png")
+            
+            h, w, c = image.shape
+            h_half, w_half = h // 2, w // 2
+            
+            top_left = image[0:h_half, 0:w_half, :]
+            top_right = image[0:h_half, w_half:w, :]
+            bottom_left = image[h_half:h, 0:w_half, :]
+            bottom_right = image[h_half:h, w_half:w, :]
+            
+            Image.fromarray(top_left).save(f"{args.output}/{name}_0.png")
+            Image.fromarray(top_right).save(f"{args.output}/{name}_1.png")
+            Image.fromarray(bottom_left).save(f"{args.output}/{name}_2.png")
+            Image.fromarray(bottom_right).save(f"{args.output}/{name}_3.png")

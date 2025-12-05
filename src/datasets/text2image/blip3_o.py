@@ -1,7 +1,14 @@
 import torch
 import os
+import torch
+import numpy as np
+import io
+import random
+import glob
+from PIL import Image
+from einops import rearrange
+from src.datasets.utils import crop2square
 from src.datasets.text2image.caption_datasets import CaptionDataset
-
 
 class BLIP3oDataset(CaptionDataset):
     def __getitem__(self, idx):
@@ -34,8 +41,7 @@ class BLIP3oDataset(CaptionDataset):
             with open(os.path.join(self.cap_folder, data_sample['annotation']), 'r') as f:
                 caption = f.read().strip()
 
-            # print(caption)
-
+            # print(caption)        
             data.update(self._process_text(caption))
             data.update(image_dir=self.image_folder, image_file=data_sample['image'],
                         type='text2image')
@@ -45,3 +51,4 @@ class BLIP3oDataset(CaptionDataset):
         except Exception as e:
             print(f"Error when reading {self.data_path}:{self.data_list[idx]}: {e}", flush=True)
             return self._retry()
+

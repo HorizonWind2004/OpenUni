@@ -7,20 +7,21 @@ from src.optimisers.custom_adamw import CustomAdamW
 # from torch.optim import AdamW
 
 with read_base():
-    from ..models.openuni_b_internvl3_1b_sana_0_6b_512_hf import model
-    from ..datasets.internvl3_1b_512.blip3o60k_latents import train_dataloader
+    from ..models.openuni_l_internvl3_2b_sana_1_6b_512_hf import model
+    from ..datasets.internvl3_2b_512.blip3o60k_latents import train_dataloader
 
 model.num_queries = 256
 model.use_activation_checkpointing = False
-model.freeze_transformer = False
-model.pretrained_pth = 'path/to/your/pretrained/model.pth'
+model.freeze_transformer = True
+model.pretrained_pth = 'checkpoints/openuni_l_internvl3_2b_sana_1_6b_512_hf_blip3o60k.pth'
+
 
 # Scheduler & Optimizer
 accumulative_counts = 1
 dataloader_num_workers = 4
-max_iters = 10000
+max_iters = 2000
 optim_type = CustomAdamW
-lr = 1e-5
+lr = 5e-7
 betas = (0.9, 0.95)
 weight_decay = 0.05
 max_norm = 1.0  # grad clip
@@ -29,7 +30,7 @@ warmup_ratio = 0.01
 
 # Save
 save_steps = 1000
-save_total_limit = 1  # Maximum checkpoints to keep (-1 means unlimited)
+save_total_limit = 10  # Maximum checkpoints to keep (-1 means unlimited)
 
 
 # optimizer

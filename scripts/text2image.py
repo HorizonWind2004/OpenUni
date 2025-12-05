@@ -6,6 +6,7 @@ from mmengine.config import Config
 from einops import rearrange
 from PIL import Image
 
+# a photo of a soap bar, not a bottle of liquid soap, without any bath bomb, no shampoo or conditioner in sight, no body wash or gel, just a simple bar of soap—no loofah, no sponge, nothing else for bathing.
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -25,6 +26,7 @@ if __name__ == "__main__":
     config = Config.fromfile(args.config)
     model = BUILDER.build(config.model).cuda().bfloat16().eval()
 
+        
     if args.checkpoint is not None:
         print(f"Load checkpoint: {args.checkpoint}", flush=True)
         checkpoint = guess_load_checkpoint(args.checkpoint)

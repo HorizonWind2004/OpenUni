@@ -8,17 +8,18 @@ from src.optimisers.custom_adamw import CustomAdamW
 
 with read_base():
     from ..models.openuni_l_internvl3_2b_sana_1_6b_512_hf import model
-    from ..datasets.internvl3_2b_512.blip3o60k_latents import train_dataloader
+    from ..datasets.internvl3_1b_512.midjourney_reconstruct import train_dataloader
 
 model.num_queries = 256
 model.use_activation_checkpointing = False
 model.freeze_transformer = False
-model.pretrained_pth = 'path/to/your/pretrained/model.pth'
+model.pretrained_pth = 'checkpoints/openuni_l_internvl3_2b_sana_1_6b_512_hf_text2image23m.pth'
+
 
 # Scheduler & Optimizer
-accumulative_counts = 1
+accumulative_counts = 16
 dataloader_num_workers = 4
-max_iters = 10000
+max_iters = 5000
 optim_type = CustomAdamW
 lr = 1e-5
 betas = (0.9, 0.95)
@@ -29,7 +30,7 @@ warmup_ratio = 0.01
 
 # Save
 save_steps = 1000
-save_total_limit = 1  # Maximum checkpoints to keep (-1 means unlimited)
+save_total_limit = 10  # Maximum checkpoints to keep (-1 means unlimited)
 
 
 # optimizer

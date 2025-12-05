@@ -34,7 +34,7 @@ if __name__ == '__main__':
     parser.add_argument('config', help='config file path.')
     parser.add_argument('--checkpoint', default=None, type=str)
     parser.add_argument('--batch_size', default=16, type=int)
-    parser.add_argument('--data', default='data/wise/cultural_common_sense.json', type=str)
+    parser.add_argument('--data', default='../Benchmark/wise/data/cultural_common_sense.json', type=str)
     parser.add_argument('--output', default='output', type=str)
     parser.add_argument("--cfg_prompt", type=str, default=None)
     parser.add_argument("--cfg_scale", type=float, default=4.5)
@@ -42,6 +42,7 @@ if __name__ == '__main__':
     parser.add_argument("--height", type=int, default=512)
     parser.add_argument("--width", type=int, default=512)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--base", type=str, default=None)
 
     args = parser.parse_args()
 
@@ -67,6 +68,11 @@ if __name__ == '__main__':
                             )
 
     model = BUILDER.build(config.model)
+    if args.base is not None:
+        print(f"Load checkpoint: {args.base}", flush=True)
+        state_dict = guess_load_checkpoint(args.base)
+        info = model.load_state_dict(state_dict, strict=False)
+
     if args.checkpoint is not None:
         state_dict = guess_load_checkpoint(args.checkpoint)
         missing, unexpected = model.load_state_dict(state_dict, strict=False)

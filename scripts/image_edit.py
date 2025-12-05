@@ -13,7 +13,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('config', help='config file path.')
     parser.add_argument("--checkpoint", type=str, default=None)
-    parser.add_argument("--image", type=str, default="data/view.jpg")
+    parser.add_argument("--image", type=str, default="recon_validation/coffee.png")
     parser.add_argument("--prompt", type=str, default="Keep the image as it is.")
     parser.add_argument("--cfg_prompt", type=str, default="Keep the image as it is.")
     parser.add_argument("--cfg_scale", type=float, default=4.5)
@@ -23,12 +23,18 @@ if __name__ == '__main__':
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--grid_size", type=int, default=2)
     parser.add_argument('--output', type=str, default='output.jpg')
-
+    parser.add_argument("--base", type=str, default=None)
+        
     args = parser.parse_args()
 
     config = Config.fromfile(args.config)
     model = BUILDER.build(config.model).eval().cuda()
     model = model.to(model.dtype)
+    if args.base is not None:
+        print(f"Load checkpoint: {args.base}", flush=True)
+        checkpoint = guess_load_checkpoint(args.base)
+        info = model.load_state_dict(args.base, strict=False)
+        
     checkpoint = guess_load_checkpoint(args.checkpoint)
     info = model.load_state_dict(checkpoint, strict=False)
 
@@ -61,7 +67,7 @@ if __name__ == '__main__':
     input_ids = inputs.input_ids
     attention_mask = inputs.attention_mask
 
-    inputs_embeds = model.llm.get_input_embeddings()(input_ids)
+    inputs_embeds = model.llm.get_input_embeddings()(input_ids).clone()
     inputs_embeds[input_ids == model.image_token_id] = vit_embeds.expand(2, -1, -1).flatten(0, 1)
 
     # repeat

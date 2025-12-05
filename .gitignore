@@ -127,3 +127,12 @@ batchscript-*
 *.pdf
 checkpoints/
 output/
+1_*/
+2_*/
+quick_*/
+wise_*/
+output_*
+qwen*
+old_results/
+rubbish/
+queue.sh
