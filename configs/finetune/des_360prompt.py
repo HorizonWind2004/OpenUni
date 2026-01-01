@@ -1,50 +1,65 @@
 from mmengine.config import read_base
+from mmengine.dataset import InfiniteSampler
 from mmengine.hooks import (CheckpointHook, DistSamplerSeedHook, IterTimerHook,
                             LoggerHook, ParamSchedulerHook)
 from mmengine.optim import AmpOptimWrapper, CosineAnnealingLR, LinearLR
 from xtuner.engine.runner import TrainLoop
+
+from src.datasets.collate_functions import collate_func_img2img
+from src.datasets.image2image.edit_datasets import Des360PromptReconstructionDataset
 from src.optimisers.custom_adamw import CustomAdamW
-# from torch.optim import AdamW
+
 
 with read_base():
     from ..models.openuni_l_internvl3_2b_sana_1_6b_512_hf import model
-    from ..datasets.internvl3_1b_512.midjourney_reconstruct import train_dataloader
+    from ..datasets.internvl3_2b_512.processors import (image_size, pad_index,
+                                                        prompt_template,
+                                                        tokenizer)
+
+
+dataset = dict(type=Des360PromptReconstructionDataset,
+               data_path='/mnt/hdfs/jixie/flux_img',
+               image_size=image_size,
+               prompt_template=prompt_template,
+               tokenizer=tokenizer)
+
+train_dataloader = dict(
+    batch_size=30,
+    num_workers=4,
+    pin_memory=True,
+    dataset=dataset,
+    sampler=dict(type=InfiniteSampler, shuffle=True),
+    collate_fn=dict(type=collate_func_img2img, pad_index=pad_index))
+
 
 model.num_queries = 256
 model.use_activation_checkpointing = False
-model.freeze_transformer = False
+model.freeze_transformer = True
 model.pretrained_pth = 'checkpoints/openuni_l_internvl3_2b_sana_1_6b_512_hf_text2image23m.pth'
 
 
-# Scheduler & Optimizer
 accumulative_counts = 16
-dataloader_num_workers = 4
 max_iters = 5000
-optim_type = CustomAdamW
 lr = 1e-5
 betas = (0.9, 0.95)
 weight_decay = 0.05
-max_norm = 1.0  # grad clip
+max_norm = 1.0
 warmup_ratio = 0.01
 
-
-# Save
 save_steps = 1000
-save_total_limit = 10  # Maximum checkpoints to keep (-1 means unlimited)
+save_total_limit = 10
 
 
-# optimizer
 optim_wrapper = dict(
     type=AmpOptimWrapper,
-    optimizer=dict(type=optim_type, lr=lr, betas=betas, weight_decay=weight_decay),
+    optimizer=dict(type=CustomAdamW, lr=lr, betas=betas, weight_decay=weight_decay),
     clip_grad=dict(max_norm=max_norm, error_if_nonfinite=False),
     accumulative_counts=accumulative_counts,
     loss_scale="dynamic",
     dtype="bfloat16",
 )
 
-# learning policy
-# More information: https://github.com/open-mmlab/mmengine/blob/main/docs/en/tutorials/param_scheduler.md  # noqa: E501
+
 param_scheduler = [
     dict(
         type=LinearLR,
@@ -60,54 +75,32 @@ param_scheduler = [
         end=max_iters)
 ]
 
-# train, val, test setting
+
 train_cfg = dict(type=TrainLoop, max_iters=max_iters)
 
-#######################################################################
-#                           PART 5  Runtime                           #
-#######################################################################
-# configure default hooks
+
 default_hooks = dict(
-    # record the time of every iteration.
     timer=dict(type=IterTimerHook),
-    # print log every 10 iterations.
     logger=dict(type=LoggerHook, log_metric_by_epoch=False, interval=10),
-    # enable the parameter scheduler.
     param_scheduler=dict(type=ParamSchedulerHook),
-    # save checkpoint per `save_steps`.
     checkpoint=dict(
         type=CheckpointHook,
         by_epoch=False,
         interval=save_steps,
         max_keep_ckpts=save_total_limit),
-    # set sampler seed in distributed evrionment.
     sampler_seed=dict(type=DistSamplerSeedHook),
 )
 
-# configure environment
+
 env_cfg = dict(
-    # whether to enable cudnn benchmark
     cudnn_benchmark=False,
-    # set multi process parameters
     mp_cfg=dict(mp_start_method='fork', opencv_num_threads=0),
-    # set distributed parameters
     dist_cfg=dict(backend='nccl'),
 )
 
-# set visualizer
 visualizer = None
-
-# set log level
 log_level = 'INFO'
-
-# load from which checkpoint
 load_from = None
-
-# whether to resume training from the loaded checkpoint
 resume = False
-
-# Defaults to use random seed and disable `deterministic`
 randomness = dict(seed=None, deterministic=False)
-
-# set log processor
 log_processor = dict(by_epoch=False)

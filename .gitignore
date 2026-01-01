@@ -136,3 +136,5 @@ qwen*
 old_results/
 rubbish/
 queue.sh
+
+naive1prompt_*/

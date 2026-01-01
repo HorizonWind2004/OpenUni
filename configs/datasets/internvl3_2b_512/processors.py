@@ -5,7 +5,7 @@ IMAGENET_MEAN = (0.485, 0.456, 0.406)
 IMAGENET_STD = (0.229, 0.224, 0.225)
 
 
-internvl3_model_name_or_path = "OpenGVLab/InternVL3-2B"
+internvl3_model_name_or_path = "/opt/tiger/OpenUni/checkpoints/InternVL3-2B"
 prompt_template = dict(
     IMG_START_TOKEN='<img>',
     IMG_END_TOKEN='</img>',

@@ -56,7 +56,7 @@ if __name__ == '__main__':
     parser.add_argument('config', help='config file path.')
     parser.add_argument('--checkpoint', default=None, type=str)
     parser.add_argument('--batch_size', default=16, type=int)
-    parser.add_argument('--data', default='../Benchmark/geneval/prompts/evaluation_metadata.jsonl', type=str)
+    parser.add_argument('--data', default='/mnt/hdfs/jixie/old/Benchmark/geneval/prompts/evaluation_metadata.jsonl', type=str)
     parser.add_argument('--output', default='output', type=str)
     parser.add_argument("--cfg_prompt", type=str, default=None)
     parser.add_argument("--cfg_scale", type=float, default=4.5)
@@ -132,7 +132,7 @@ if __name__ == '__main__':
                 prompt += model.prompt_template['IMG_START_TOKEN']
             prompts.append(prompt)
 
-        prompts = prompts * 12
+        prompts = prompts * 4
         prompts = prompts + len(prompts) * [cfg_prompt]
 
         inputs = model.tokenizer(
@@ -141,7 +141,7 @@ if __name__ == '__main__':
         images = model.generate(**inputs, progress_bar=False,
                                 cfg_scale=args.cfg_scale, num_steps=args.num_steps,
                                 generator=generator, height=args.height, width=args.width)
-        images = rearrange(images, '(n b) c h w -> b n h w c', n=12)
+        images = rearrange(images, '(n b) c h w -> b n h w c', n=4)
 
         images = torch.clamp(
             127.5 * images + 128.0, 0, 255).to("cpu", dtype=torch.uint8).numpy()

@@ -3,6 +3,7 @@ import numpy as np
 import io
 import random
 import glob
+import os
 from PIL import Image
 from einops import rearrange
 from src.datasets.utils import crop2square
@@ -351,6 +352,61 @@ class BLIP3oSFTDataset(CaptionDataset):
                 pixel_values=pixel_values,
                 image_dir=self.image_folder, image_file=data_sample['image'],
                 type='text2image')
+
+            return data
+
+        except Exception as e:
+            print(f"Error when reading {self.data_path}:{self.data_list[idx]}: {e}", flush=True)
+            return self._retry()
+
+class Naive1PromptDataset(ReconstructDataset):
+    def __init__(self, data_path, *args, **kwargs):
+        self.data_path = data_path
+        self._load_data(data_path)
+        super().__init__(data_path=data_path, *args, **kwargs)
+
+    def _load_data(self, data_path):
+        self.data_list = []
+        # Support common image extensions
+        extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.webp', '*.JPG', '*.JPEG', '*.PNG']
+        
+        for ext in extensions:
+            # Recursive search
+            files = glob.glob(os.path.join(data_path, ext))
+            self.data_list.extend(files)
+            
+        self.data_list = sorted(list(set(self.data_list)))
+        self.data_list = [{'image': path} for path in self.data_list]
+        print(f"Loaded {len(self.data_list)} images from {data_path} for reconstruction", flush=True)
+
+    def _read_image(self, image_path):
+        return Image.open(image_path)
+
+
+class FolderReconstructionDataset(Naive1PromptDataset):
+    pass
+
+
+class Des360PromptReconstructionDataset(Naive1PromptDataset):
+    def __init__(self, data_path, *args, **kwargs):
+        self.prompt_list = get_recon_prompt_list()
+        super().__init__(data_path=data_path, *args, **kwargs)
+
+    def __getitem__(self, idx):
+        if self.debug:
+            idx = 0
+        try:
+            data_sample = self.data_list[idx]
+            image = self._read_image(data_sample['image']).convert('RGB')
+            prompt = random.choice(self.prompt_list)
+            pixel_values = pixel_values_src = self._process_image(image)
+
+            data = self._process_text(prompt)
+
+            data.update(
+                pixel_values_src=pixel_values_src, pixel_values=pixel_values,
+                image_dir=self.image_folder, image_file=data_sample['image'],
+                type='image2image')
 
             return data
 

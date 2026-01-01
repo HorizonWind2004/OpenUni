@@ -8,20 +8,20 @@ from src.optimisers.custom_adamw import CustomAdamW
 
 with read_base():
     from ..models.openuni_l_internvl3_2b_sana_1_6b_512_hf import model
-    from ..datasets.internvl3_2b_512.blip3o60k_latents import train_dataloader
+    from ..datasets.internvl3_2b_512.Naive1PromptDataset import train_dataloader
 
 model.num_queries = 256
 model.use_activation_checkpointing = False
 model.freeze_transformer = True
-model.pretrained_pth = 'checkpoints/openuni_l_internvl3_2b_sana_1_6b_512_hf_blip3o60k.pth'
+model.pretrained_pth = 'checkpoints/openuni_l_internvl3_2b_sana_1_6b_512_hf_text2image23m.pth'
 
 
 # Scheduler & Optimizer
-accumulative_counts = 1
+accumulative_counts = 16
 dataloader_num_workers = 4
-max_iters = 2000
+max_iters = 5000
 optim_type = CustomAdamW
-lr = 5e-7
+lr = 1e-5
 betas = (0.9, 0.95)
 weight_decay = 0.05
 max_norm = 1.0  # grad clip

@@ -11,7 +11,7 @@ with read_base():
         prompt_template, tokenizer, internvl3_model_name_or_path, image_size
 
 
-sana_model_name_or_path = f"Efficient-Large-Model/Sana_1600M_{image_size}px_diffusers"
+sana_model_name_or_path = f"/opt/tiger/OpenUni/checkpoints/sana"
 
 model = dict(type=OpenUniInternVL3SANAHF,
              num_queries=256,
