@@ -24,7 +24,7 @@ dataset = dict(type=Des360PromptReconstructionDataset,
                tokenizer=tokenizer)
 
 train_dataloader = dict(
-    batch_size=30,
+    batch_size=32,
     num_workers=4,
     pin_memory=True,
     dataset=dataset,
@@ -38,9 +38,9 @@ model.freeze_transformer = True
 model.pretrained_pth = 'checkpoints/openuni_l_internvl3_2b_sana_1_6b_512_hf_text2image23m.pth'
 
 
-accumulative_counts = 16
+accumulative_counts = 1
 max_iters = 5000
-lr = 1e-5
+lr = 1e-6
 betas = (0.9, 0.95)
 weight_decay = 0.05
 max_norm = 1.0
@@ -102,5 +102,5 @@ visualizer = None
 log_level = 'INFO'
 load_from = None
 resume = False
-randomness = dict(seed=None, deterministic=False)
+randomness = dict(seed=42, deterministic=True)
 log_processor = dict(by_epoch=False)

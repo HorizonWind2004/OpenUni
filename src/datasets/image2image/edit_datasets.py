@@ -360,22 +360,25 @@ class BLIP3oSFTDataset(CaptionDataset):
             return self._retry()
 
 class Naive1PromptDataset(ReconstructDataset):
-    def __init__(self, data_path, *args, **kwargs):
+    def __init__(self, data_path, num_image=248999, *args, **kwargs):
         self.data_path = data_path
+        self.num_image = num_image
         self._load_data(data_path)
         super().__init__(data_path=data_path, *args, **kwargs)
 
     def _load_data(self, data_path):
         self.data_list = []
         # Support common image extensions
-        extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.webp', '*.JPG', '*.JPEG', '*.PNG']
+        # extensions = ['*.jpg', '*.jpeg', '*.png', '*.bmp', '*.webp', '*.JPG', '*.JPEG', '*.PNG']
         
-        for ext in extensions:
-            # Recursive search
-            files = glob.glob(os.path.join(data_path, ext))
-            self.data_list.extend(files)
+        # for ext in extensions:
+        #     # Recursive search
+        #     files = glob.glob(os.path.join(data_path, ext))
+        #     self.data_list.extend(files)
             
-        self.data_list = sorted(list(set(self.data_list)))
+            
+        # self.data_list = sorted(list(set(self.data_list)))
+        self.data_list = [os.path.join(data_path, f'image_00{str(i).zfill(6)}.png') for i in range (self.num_image)]
         self.data_list = [{'image': path} for path in self.data_list]
         print(f"Loaded {len(self.data_list)} images from {data_path} for reconstruction", flush=True)
 
@@ -388,9 +391,9 @@ class FolderReconstructionDataset(Naive1PromptDataset):
 
 
 class Des360PromptReconstructionDataset(Naive1PromptDataset):
-    def __init__(self, data_path, *args, **kwargs):
+    def __init__(self, data_path, num_image=248999, *args, **kwargs):
         self.prompt_list = get_recon_prompt_list()
-        super().__init__(data_path=data_path, *args, **kwargs)
+        super().__init__(data_path=data_path, num_image=num_image, *args, **kwargs)
 
     def __getitem__(self, idx):
         if self.debug:

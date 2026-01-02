@@ -4,8 +4,9 @@ NNODES=${NNODES:-1}            # Number of total nodes (default: 1).
 NODE_RANK=${NODE_RANK:-0}      # Rank of the current node (default: 0).
 MASTER_ADDR=${MASTER_ADDR:-"127.0.0.1"}  # IP address of the master node.
 MASTER_PORT=${MASTER_PORT:-25980}            # Port used for communication (default: 29500).
-
-
+export CUBLAS_WORKSPACE_CONFIG=:4096:8
+export CUBLAS_WORKSPACE_CONFIG=:16:8
+export PYTHONPATH=.
 torchrun --nproc_per_node=$GPUS_PER_NODE \
          --nnodes=$NNODES \
          --node_rank=$NODE_RANK \
