@@ -40,6 +40,7 @@ class OpenUniInternVL3SANAHF(BaseModel):
                  prompt_template,
                  connector,
                  num_queries=256,
+                 limit_image_attention_layers=None,
                  pretrained_pth=None,
                  use_activation_checkpointing=True,
                  lora_modules=None,  # ["to_k", "to_q", "to_v"],
@@ -90,6 +91,9 @@ class OpenUniInternVL3SANAHF(BaseModel):
         self.register_buffer('vit_std', torch.tensor(IMAGENET_STD), persistent=False)
 
         self.num_queries = num_queries
+        self.limit_image_attention_layers = limit_image_attention_layers
+        self.llm.limit_image_attention_layers = limit_image_attention_layers
+        self.llm.config.limit_image_attention_layers = limit_image_attention_layers
         self.connector = ConnectorEncoder(ConnectorConfig(**connector))
 
         self.proj_type = proj_type
@@ -300,7 +304,6 @@ class OpenUniInternVL3SANAHF(BaseModel):
         return loss_diff
 
     def image2image_loss(self, data_dict):
-
         pixel_values_src = data_dict['pixel_values_src'].to(dtype=self.dtype, device=self.device)
         vit_embeds = self.get_semantic_features(pixel_values_src)
         # vit_embeds.requires_grad = True
@@ -323,6 +326,7 @@ class OpenUniInternVL3SANAHF(BaseModel):
         if inputs_embeds.shape[1] > max_length:
             inputs_embeds = inputs_embeds[:, -max_length:]
             attention_mask = attention_mask[:, -max_length:]
+            input_ids = input_ids[:, -max_length:]
 
         hidden_states = self.meta_queries[None].expand(b, self.num_queries, -1)
 
@@ -330,8 +334,25 @@ class OpenUniInternVL3SANAHF(BaseModel):
                                             inputs_embeds=inputs_embeds,
                                             attention_mask=attention_mask)
 
-        output = self.llm.model(**inputs, return_dict=True)
-        hidden_states = output.last_hidden_state[:, -self.num_queries:]
+        if self.limit_image_attention_layers is None:
+            output = self.llm.model(**inputs, return_dict=True)
+            last_hidden_state = output.last_hidden_state
+        else:
+            prompt_len = input_ids.shape[1]
+            image_positions_full = torch.zeros(
+                (input_ids.shape[0], prompt_len + self.num_queries),
+                device=input_ids.device,
+                dtype=torch.bool,
+            )
+            image_positions_full[:, :prompt_len] = input_ids == self.image_token_id
+            last_hidden_state = self.qwen2_forward_limited_image_attention(
+                inputs_embeds=inputs['inputs_embeds'],
+                attention_mask=inputs['attention_mask'],
+                position_ids=inputs['position_ids'],
+                image_positions_full=image_positions_full,
+            )
+
+        hidden_states = last_hidden_state[:, -self.num_queries:]
         hidden_states = self.llm2dit(hidden_states)
 
         loss_diff = self.diff_loss(model_input=image_latents,
@@ -339,6 +360,70 @@ class OpenUniInternVL3SANAHF(BaseModel):
                                    prompt_attention_mask=None)
 
         return loss_diff
+
+    def qwen2_forward_limited_image_attention(self, inputs_embeds, attention_mask, position_ids, image_positions_full):
+        model = self.llm.model
+
+        cache_position = torch.arange(0, inputs_embeds.shape[1], device=inputs_embeds.device)
+        position_embeddings = model.rotary_emb(inputs_embeds, position_ids)
+
+        hidden_states = inputs_embeds
+
+        if attention_mask is not None and (attention_mask == 0).any():
+            causal_mask = attention_mask
+        else:
+            causal_mask = None
+
+        limited_attention_mask = attention_mask
+        if limited_attention_mask is None:
+            limited_attention_mask = torch.ones(inputs_embeds.shape[:2], device=inputs_embeds.device, dtype=torch.bool)
+        limited_attention_mask = limited_attention_mask.clone()
+        limited_attention_mask[image_positions_full] = False
+
+        if (limited_attention_mask == 0).any():
+            limited_mask = limited_attention_mask
+        else:
+            limited_mask = None
+
+        for idx, decoder_layer in enumerate(model.layers):
+            use_limited = self.limit_image_attention_layers is not None and idx >= self.limit_image_attention_layers
+            attention_type = getattr(decoder_layer, 'attention_type', None)
+            if attention_type is None:
+                layer_mask = limited_mask if use_limited else causal_mask
+            else:
+                causal_mask_mapping = {attention_type: causal_mask}
+                limited_causal_mask_mapping = {attention_type: limited_mask}
+                mapping = limited_causal_mask_mapping if use_limited else causal_mask_mapping
+                layer_mask = mapping[attention_type]
+
+            if model.gradient_checkpointing and model.training:
+                layer_outputs = model._gradient_checkpointing_func(
+                    decoder_layer.__call__,
+                    hidden_states,
+                    layer_mask,
+                    position_ids,
+                    None,
+                    False,
+                    False,
+                    cache_position,
+                    position_embeddings,
+                )
+            else:
+                layer_outputs = decoder_layer(
+                    hidden_states,
+                    attention_mask=layer_mask,
+                    position_ids=position_ids,
+                    past_key_value=None,
+                    output_attentions=False,
+                    use_cache=False,
+                    cache_position=cache_position,
+                    position_embeddings=position_embeddings,
+                )
+
+            hidden_states = layer_outputs[0]
+
+        hidden_states = model.norm(hidden_states)
+        return hidden_states
 
     @torch.no_grad()
     def generate(self,

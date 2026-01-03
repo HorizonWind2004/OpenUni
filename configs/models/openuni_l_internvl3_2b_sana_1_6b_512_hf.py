@@ -15,6 +15,7 @@ sana_model_name_or_path = f"/opt/tiger/OpenUni/checkpoints/sana"
 
 model = dict(type=OpenUniInternVL3SANAHF,
              num_queries=256,
+             limit_image_attention_layers=None,
              connector=dict(
                  hidden_size=1536,
                  intermediate_size=8960,
