@@ -126,6 +126,7 @@ batchscript-*
 .idea/
 *.pdf
 checkpoints/
+checkpoints
 output/
 1_*/
 2_*/
@@ -138,3 +139,4 @@ rubbish/
 queue.sh
 
 naive1prompt_*/
+no_used
