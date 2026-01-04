@@ -33,7 +33,7 @@ for EXP_NAME in "$@"; do
         ITER=${FILENAME#iter_}
         ITER=${ITER%.pth}
         
-        OUTPUT_DIR="${WORK_DIR}/inference/iter_${ITER}"
+        OUTPUT_DIR="$/mnt/hdfs/jixie/old/${EXP_NAME}/${EXP_NAME}_${ITER}"
         
         echo "--------------------------------------------------"
         echo "Running inference for checkpoint: $CKPT_PATH"
@@ -41,7 +41,7 @@ for EXP_NAME in "$@"; do
         
         mkdir -p "$OUTPUT_DIR"
         
-        accelerate launch scripts/evaluation/gen_eval.py "$CONFIG" \
+        accelerate launch --main_process_port 12333 scripts/evaluation/gen_eval.py "$CONFIG" \
             --checkpoint "$CKPT_PATH" \
             --batch_size 4 \
             --output "$OUTPUT_DIR" \
