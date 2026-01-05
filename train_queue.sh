@@ -18,7 +18,7 @@ for EXP_NAME in "$@"; do
     # Run training
     # scripts/train_ddp.sh accepts config file as first argument
     echo "Running training command: GPUS_PER_NODE=4 NNODES=1 bash scripts/train_ddp.sh $CONFIG"
-    GPUS_PER_NODE=4 NNODES=1 bash scripts/train_ddp.sh "$CONFIG"
+    GPUS_PER_NODE=4 NNODES=1 bash scripts/train_ddp.sh "$CONFIG" --deepspeed deepspeed_zero2
     TRAIN_EXIT_CODE=$?
     
     if [ $TRAIN_EXIT_CODE -ne 0 ]; then

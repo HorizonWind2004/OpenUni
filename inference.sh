@@ -32,8 +32,9 @@ for EXP_NAME in "$@"; do
         FILENAME=$(basename "$CKPT_PATH")
         ITER=${FILENAME#iter_}
         ITER=${ITER%.pth}
-        
-        OUTPUT_DIR="$/mnt/hdfs/jixie/old/${EXP_NAME}/${EXP_NAME}_${ITER}"
+        # mkdir /mnt/hdfs/jixie/old/${EXP_NAME}
+        mkdir -p "/mnt/hdfs/jixie/old/${EXP_NAME}"
+        OUTPUT_DIR="/mnt/hdfs/jixie/old/${EXP_NAME}/${EXP_NAME}_${ITER}"
         
         echo "--------------------------------------------------"
         echo "Running inference for checkpoint: $CKPT_PATH"

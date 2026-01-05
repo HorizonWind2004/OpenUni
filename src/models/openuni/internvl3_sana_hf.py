@@ -361,69 +361,126 @@ class OpenUniInternVL3SANAHF(BaseModel):
 
         return loss_diff
 
-    def qwen2_forward_limited_image_attention(self, inputs_embeds, attention_mask, position_ids, image_positions_full):
+    def qwen2_forward_limited_image_attention(self,
+                                             inputs_embeds,
+                                             attention_mask,
+                                             position_ids,
+                                             image_positions_full,
+                                             past_key_values=None,
+                                             use_cache=None,
+                                             cache_position=None,
+                                             **kwargs):
         model = self.llm.model
 
-        cache_position = torch.arange(0, inputs_embeds.shape[1], device=inputs_embeds.device)
-        position_embeddings = model.rotary_emb(inputs_embeds, position_ids)
+        if cache_position is None:
+            past_seen_tokens = past_key_values.get_seq_length() if past_key_values is not None else 0
+            cache_position = torch.arange(
+                past_seen_tokens, past_seen_tokens + inputs_embeds.shape[1], device=inputs_embeds.device
+            )
 
-        hidden_states = inputs_embeds
+        if position_ids is None:
+            position_ids = cache_position.unsqueeze(0)
 
-        if attention_mask is not None and (attention_mask == 0).any():
-            causal_mask = attention_mask
-        else:
-            causal_mask = None
+        if not isinstance(causal_mask_mapping := attention_mask, dict):
+            mask_kwargs = {
+                "config": model.config,
+                "input_embeds": inputs_embeds,
+                "attention_mask": attention_mask,
+                "cache_position": cache_position,
+                "past_key_values": past_key_values,
+                "position_ids": position_ids,
+            }
+            from transformers.models.qwen2.modeling_qwen2 import (
+                create_causal_mask,
+                create_sliding_window_causal_mask,
+            )
+
+            causal_mask_mapping = {
+                "full_attention": create_causal_mask(**mask_kwargs),
+            }
+            if model.has_sliding_layers:
+                causal_mask_mapping["sliding_attention"] = create_sliding_window_causal_mask(**mask_kwargs)
 
         limited_attention_mask = attention_mask
         if limited_attention_mask is None:
-            limited_attention_mask = torch.ones(inputs_embeds.shape[:2], device=inputs_embeds.device, dtype=torch.bool)
+            limited_attention_mask = torch.ones(
+                inputs_embeds.shape[:2], device=inputs_embeds.device, dtype=torch.bool)
         limited_attention_mask = limited_attention_mask.clone()
         limited_attention_mask[image_positions_full] = False
 
-        if (limited_attention_mask == 0).any():
-            limited_mask = limited_attention_mask
-        else:
-            limited_mask = None
+        if not isinstance(limited_causal_mask_mapping := limited_attention_mask, dict):
+            limited_mask_kwargs = {
+                "config": model.config,
+                "input_embeds": inputs_embeds,
+                "attention_mask": limited_attention_mask,
+                "cache_position": cache_position,
+                "past_key_values": past_key_values,
+                "position_ids": position_ids,
+            }
+            from transformers.models.qwen2.modeling_qwen2 import (
+                create_causal_mask,
+                create_sliding_window_causal_mask,
+            )
 
-        for idx, decoder_layer in enumerate(model.layers):
+            limited_causal_mask_mapping = {
+                "full_attention": create_causal_mask(**limited_mask_kwargs),
+            }
+            if model.has_sliding_layers:
+                limited_causal_mask_mapping["sliding_attention"] = create_sliding_window_causal_mask(
+                    **limited_mask_kwargs)
+
+        hidden_states = inputs_embeds
+        position_embeddings = model.rotary_emb(hidden_states, position_ids)
+
+        for idx, decoder_layer in enumerate(model.layers[: model.config.num_hidden_layers]):
             use_limited = self.limit_image_attention_layers is not None and idx >= self.limit_image_attention_layers
-            attention_type = getattr(decoder_layer, 'attention_type', None)
-            if attention_type is None:
-                layer_mask = limited_mask if use_limited else causal_mask
-            else:
-                causal_mask_mapping = {attention_type: causal_mask}
-                limited_causal_mask_mapping = {attention_type: limited_mask}
-                mapping = limited_causal_mask_mapping if use_limited else causal_mask_mapping
-                layer_mask = mapping[attention_type]
-
-            if model.gradient_checkpointing and model.training:
-                layer_outputs = model._gradient_checkpointing_func(
-                    decoder_layer.__call__,
-                    hidden_states,
-                    layer_mask,
-                    position_ids,
-                    None,
-                    False,
-                    False,
-                    cache_position,
-                    position_embeddings,
-                )
-            else:
-                layer_outputs = decoder_layer(
-                    hidden_states,
-                    attention_mask=layer_mask,
-                    position_ids=position_ids,
-                    past_key_value=None,
-                    output_attentions=False,
-                    use_cache=False,
-                    cache_position=cache_position,
-                    position_embeddings=position_embeddings,
-                )
-
-            hidden_states = layer_outputs[0]
+            mapping = limited_causal_mask_mapping if use_limited else causal_mask_mapping
+            hidden_states = decoder_layer(
+                hidden_states,
+                attention_mask=mapping[decoder_layer.attention_type],
+                position_ids=position_ids,
+                past_key_values=past_key_values,
+                use_cache=use_cache,
+                cache_position=cache_position,
+                position_embeddings=position_embeddings,
+                **kwargs,
+            )
+            if isinstance(hidden_states, (tuple, list)):
+                hidden_states = hidden_states[0]
 
         hidden_states = model.norm(hidden_states)
         return hidden_states
+    #             mapping = limited_causal_mask_mapping if use_limited else causal_mask_mapping
+    #             layer_mask = mapping[attention_type]
+
+    #         if model.gradient_checkpointing and model.training:
+    #             layer_outputs = model._gradient_checkpointing_func(
+    #                 decoder_layer.__call__,
+    #                 hidden_states,
+    #                 layer_mask,
+    #                 position_ids,
+    #                 None,
+    #                 False,
+    #                 False,
+    #                 cache_position,
+    #                 position_embeddings,
+    #             )
+    #         else:
+    #             layer_outputs = decoder_layer(
+    #                 hidden_states,
+    #                 attention_mask=layer_mask,
+    #                 position_ids=position_ids,
+    #                 past_key_value=None,
+    #                 output_attentions=False,
+    #                 use_cache=False,
+    #                 cache_position=cache_position,
+    #                 position_embeddings=position_embeddings,
+    #             )
+
+    #         hidden_states = layer_outputs[0]
+
+    #     hidden_states = model.norm(hidden_states)
+    #     return hidden_states
 
     @torch.no_grad()
     def generate(self,

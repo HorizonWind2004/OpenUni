@@ -58,6 +58,8 @@ if __name__ == '__main__':
     parser.add_argument('--batch_size', default=16, type=int)
     parser.add_argument('--data', default='/mnt/hdfs/jixie/old/Benchmark/geneval/prompts/evaluation_metadata.jsonl', type=str)
     parser.add_argument('--output', default='output', type=str)
+    parser.add_argument('--print_state_dict_match', default=True, type=bool)
+    parser.add_argument('--print_state_dict_match_n', default=50, type=int)
     parser.add_argument("--cfg_prompt", type=str, default=None)
     parser.add_argument("--cfg_scale", type=float, default=4.5)
     parser.add_argument('--num_steps', type=int, default=20)
@@ -89,16 +91,48 @@ if __name__ == '__main__':
                             collate_fn=lambda x: x
                             )
 
+    def normalize_state_dict(obj):
+        if isinstance(obj, dict):
+            for key in ['state_dict', 'model', 'model_state_dict']:
+                if key in obj and isinstance(obj[key], dict):
+                    obj = obj[key]
+                    break
+        if isinstance(obj, dict):
+            obj = {k.removeprefix('module.').removeprefix('model.'): v for k, v in obj.items()}
+        return obj
+
+    def print_state_dict_match_summary(tag, model_, state_dict_):
+        if not args.print_state_dict_match:
+            return
+        if not isinstance(state_dict_, dict):
+            accelerator.print(f'[{tag}] state_dict is not a dict: {type(state_dict_)}')
+            return
+        model_keys = set(model_.state_dict().keys())
+        ckpt_keys = set(state_dict_.keys())
+        matched = sorted(model_keys & ckpt_keys)
+        missing = sorted(model_keys - ckpt_keys)
+        unexpected = sorted(ckpt_keys - model_keys)
+        n = max(0, int(args.print_state_dict_match_n))
+        accelerator.print(
+            f'[{tag}] matched={len(matched)} missing={len(missing)} unexpected={len(unexpected)}')
+        if n > 0:
+            accelerator.print(f'[{tag}] matched[:{n}]={matched[:n]}')
+            accelerator.print(f'[{tag}] missing[:{n}]={missing[:n]}')
+            accelerator.print(f'[{tag}] unexpected[:{n}]={unexpected[:n]}')
+
     model = BUILDER.build(config.model)
     if args.base is not None:
         print(f"Load checkpoint: {args.base}", flush=True)
-        state_dict = guess_load_checkpoint(args.base)
-        info = model.load_state_dict(state_dict, strict=False)
+        state_dict = normalize_state_dict(guess_load_checkpoint(args.base))
+        # print_state_dict_match_summary('base', model, state_dict)
+        _missing, _unexpected = model.load_state_dict(state_dict, strict=False)
 
     if args.checkpoint is not None:
-        state_dict = guess_load_checkpoint(args.checkpoint)
+        state_dict = normalize_state_dict(guess_load_checkpoint(args.checkpoint))
+        print_state_dict_match_summary('checkpoint', model, state_dict)
         missing, unexpected = model.load_state_dict(state_dict, strict=False)
-        accelerator.print(f"Unexpected parameters: {unexpected}")
+        if args.print_state_dict_match:
+            accelerator.print(f"[checkpoint] load_state_dict missing={len(missing)} unexpected={len(unexpected)}")
     model = model.to(device=accelerator.device)
     model = model.to(model.dtype)
     model.eval()
