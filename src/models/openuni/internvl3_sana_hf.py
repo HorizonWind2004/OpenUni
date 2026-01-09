@@ -41,6 +41,7 @@ class OpenUniInternVL3SANAHF(BaseModel):
                  connector,
                  num_queries=256,
                  limit_image_attention_layers=None,
+                 use_certain_layer=None,
                  pretrained_pth=None,
                  use_activation_checkpointing=True,
                  lora_modules=None,  # ["to_k", "to_q", "to_v"],
@@ -92,8 +93,11 @@ class OpenUniInternVL3SANAHF(BaseModel):
 
         self.num_queries = num_queries
         self.limit_image_attention_layers = limit_image_attention_layers
+        self.use_certain_layer = use_certain_layer
         self.llm.limit_image_attention_layers = limit_image_attention_layers
         self.llm.config.limit_image_attention_layers = limit_image_attention_layers
+        self.llm.use_certain_layer = use_certain_layer
+        self.llm.config.use_certain_layer = use_certain_layer
         self.connector = ConnectorEncoder(ConnectorConfig(**connector))
 
         self.proj_type = proj_type
@@ -333,8 +337,22 @@ class OpenUniInternVL3SANAHF(BaseModel):
         inputs = self.prepare_forward_input(x=hidden_states,
                                             inputs_embeds=inputs_embeds,
                                             attention_mask=attention_mask)
-
-        if self.limit_image_attention_layers is None:
+        if self.use_certain_layer is not None:
+            prompt_len = input_ids.shape[1]
+            image_positions_full = torch.zeros(
+                (input_ids.shape[0], prompt_len + self.num_queries),
+                device=input_ids.device,
+                dtype=torch.bool,
+            )
+            image_positions_full[:, :prompt_len] = input_ids == self.image_token_id
+            last_hidden_state = self.qwen2_forward_certain_layer_image_attention(
+                inputs_embeds=inputs['inputs_embeds'],
+                attention_mask=inputs['attention_mask'],
+                position_ids=inputs['position_ids'],
+                image_positions_full=image_positions_full,
+                use_certain_layer=self.use_certain_layer,
+            )
+        elif self.limit_image_attention_layers is None:
             output = self.llm.model(**inputs, return_dict=True)
             last_hidden_state = output.last_hidden_state
         else:
@@ -450,6 +468,115 @@ class OpenUniInternVL3SANAHF(BaseModel):
 
         hidden_states = model.norm(hidden_states)
         return hidden_states
+
+    def qwen2_forward_certain_layer_image_attention(self,
+                                                    inputs_embeds,
+                                                    attention_mask,
+                                                    position_ids,
+                                                    image_positions_full,
+                                                    use_certain_layer=None,
+                                                    **kwargs):
+        model = self.llm.model
+        bsz, seqlen, _ = inputs_embeds.shape
+        num_queries = self.num_queries
+        prompt_len = seqlen - num_queries
+
+        use_layers = self.use_certain_layer if use_certain_layer is None else use_certain_layer
+        if use_layers is None:
+            use_layers = []
+
+        try:
+            from transformers.cache_utils import DynamicCache
+        except Exception:
+            DynamicCache = None
+
+        cache_prompt = DynamicCache() if DynamicCache is not None else None
+
+        cache_pos_prompt = torch.arange(0, prompt_len, device=inputs_embeds.device)
+        pos_ids_prompt = cache_pos_prompt.unsqueeze(0)
+
+        cache_pos_meta = torch.arange(prompt_len, prompt_len + num_queries, device=inputs_embeds.device)
+        pos_ids_meta = cache_pos_meta.unsqueeze(0)
+
+        inputs_embeds_prompt = inputs_embeds[:, :prompt_len]
+        inputs_embeds_meta = inputs_embeds[:, prompt_len:]
+
+        # Build mask mappings for prompt and meta segments
+        from transformers.models.qwen2.modeling_qwen2 import (
+            create_causal_mask,
+            create_sliding_window_causal_mask,
+        )
+
+        attn_mask_prompt = attention_mask[:, :prompt_len] if attention_mask is not None else None
+        mask_kwargs_prompt = {
+            "config": model.config,
+            "input_embeds": inputs_embeds_prompt,
+            "attention_mask": attn_mask_prompt,
+            "cache_position": cache_pos_prompt,
+            "past_key_values": None,
+            "position_ids": pos_ids_prompt,
+        }
+        causal_mask_mapping_prompt = {
+            "full_attention": create_causal_mask(**mask_kwargs_prompt),
+        }
+        if getattr(model, 'has_sliding_layers', False):
+            causal_mask_mapping_prompt["sliding_attention"] = create_sliding_window_causal_mask(**mask_kwargs_prompt)
+
+        attn_mask_meta = torch.ones((bsz, num_queries), device=inputs_embeds.device, dtype=torch.bool)
+        mask_kwargs_meta = {
+            "config": model.config,
+            "input_embeds": inputs_embeds_meta,
+            "attention_mask": attn_mask_meta,
+            "cache_position": cache_pos_meta,
+            "past_key_values": None,
+            "position_ids": pos_ids_meta,
+        }
+        causal_mask_mapping_meta = {
+            "full_attention": create_causal_mask(**mask_kwargs_meta),
+        }
+        if getattr(model, 'has_sliding_layers', False):
+            causal_mask_mapping_meta["sliding_attention"] = create_sliding_window_causal_mask(**mask_kwargs_meta)
+
+        # Stage 1: process prompt-only to "bake" image tokens
+        hs_prompt = inputs_embeds_prompt
+        pos_emb_prompt = model.rotary_emb(hs_prompt, pos_ids_prompt)
+
+        for decoder_layer in model.layers[: model.config.num_hidden_layers]:
+            hs_prompt = decoder_layer(
+                hs_prompt,
+                attention_mask=causal_mask_mapping_prompt[decoder_layer.attention_type],
+                position_ids=pos_ids_prompt,
+                past_key_values=cache_prompt,
+                use_cache=True if cache_prompt is not None else False,
+                cache_position=cache_pos_prompt,
+                position_embeddings=pos_emb_prompt,
+                **kwargs,
+            )
+            if isinstance(hs_prompt, (tuple, list)):
+                hs_prompt = hs_prompt[0]
+
+        # Stage 2: process meta queries only, with layer-wise attention choice
+        hs_meta = inputs_embeds_meta
+        pos_emb_meta = model.rotary_emb(hs_meta, pos_ids_meta)
+
+        for idx, decoder_layer in enumerate(model.layers[: model.config.num_hidden_layers]):
+            mapping = causal_mask_mapping_meta
+            pkv = cache_prompt if idx in use_layers else None
+            hs_meta = decoder_layer(
+                hs_meta,
+                attention_mask=mapping[decoder_layer.attention_type],
+                position_ids=pos_ids_meta,
+                past_key_values=pkv,
+                use_cache=True if pkv is not None else False,
+                cache_position=cache_pos_meta,
+                position_embeddings=pos_emb_meta,
+                **kwargs,
+            )
+            if isinstance(hs_meta, (tuple, list)):
+                hs_meta = hs_meta[0]
+
+        hs_meta = model.norm(hs_meta)
+        return hs_meta
     #             mapping = limited_causal_mask_mapping if use_limited else causal_mask_mapping
     #             layer_mask = mapping[attention_type]
 

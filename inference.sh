@@ -44,7 +44,7 @@ for EXP_NAME in "$@"; do
         
         accelerate launch --main_process_port 12333 scripts/evaluation/gen_eval.py "$CONFIG" \
             --checkpoint "$CKPT_PATH" \
-            --batch_size 4 \
+            --batch_size 8 \
             --output "$OUTPUT_DIR" \
             --height 512 --width 512 \
             --seed 42
